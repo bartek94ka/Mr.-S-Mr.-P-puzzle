@@ -1,0 +1,5 @@
+﻿  main.cpp
+c:\users\bartosz\documents\visual studio 2015\projects\mr_p_and_mr_s_puzzle\mr_p_and_mr_s_puzzle\main.cpp(82): warning C4996: 'scanf': This function or variable may be unsafe. Consider using scanf_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
+  c:\program files (x86)\windows kits\10\include\10.0.10240.0\ucrt\stdio.h(1270): note: see declaration of 'scanf'
+c:\users\bartosz\documents\visual studio 2015\projects\mr_p_and_mr_s_puzzle\mr_p_and_mr_s_puzzle\main.cpp(177): warning C4018: '<=': signed/unsigned mismatch
+  Mr_P_and_Mr_S_puzzle.vcxproj -> c:\users\bartosz\documents\visual studio 2015\Projects\Mr_P_and_Mr_S_puzzle\Debug\Mr_P_and_Mr_S_puzzle.exe
