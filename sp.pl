@@ -1,47 +1,23 @@
 :- use_module(library(clpfd)).
 
-min(A, B, A) :-
-	A =< B.
-min(A, B, B) :-
-	B < A.
+:- multifile clpfd:run_propagator/2.
 
-decompose_product(Min, Max, N, A, B) :-
-	min(Max, N, M),
-	A in (Min .. M),
-	B in (Min .. M),
-	A #< B,
-	N #= A*B #<== 1,
-	label([A, B]).
-
-%nieunikatowe A i B
-non_unique_AB(Min, Max, A, B) :-
-	A in (Min .. Max),
-	B in (Min .. Max),
-	A #< B,
-	Iloczyn #= A*B,
-	A2 in (Min .. Max),
-	B2 in (Min .. Max),
-	A2 #< B2,
-	A2 #\= A,
-	B2 #\= B,
-	A2*B2 #= Iloczyn,
-	label([A, B]).
-
+%generacja ciągu liczb na bazie wartości minimalnej, maksymalnej oraz podanego kroku
+%wynikiem jest dziedzina reprezentująca ciąg
+%dostęp do kolejnych elementów można uzyskać poprzez użycie predykatu label/2
+%	przykladowo
+%	min = 2
+%	max = 99
+%	step = 4
+%	uzyskany ciąg: 2 , 6, 10, 14, ..., 94, 98
 get_series_step(Min, Max, Step, Out) :-
 	Out in (Min .. Max),
-	Out2 in (Min .. Max),
-	get_series_step(Min, Max, Step, Out, Out2, Min, Min).
-get_series_step(_, Max, _, Out, Out, Max, Max).
-get_series_step(_, Max, _, Out, Out, K, Max) :- Out #\= Max.
-get_series_step(Min, Max, Step, Out, Out2, K, K) :-
-	NK #= K + Step,
-	NAcc #= K + 1,
-	get_series_step(Min, Max, Step, Out, Out2, NK, NAcc).
-get_series_step(Min, Max, Step, Out, Out2, K, Acc) :-
-	Out2 #\= Acc,
-	NAcc #= Acc + 1,
-	get_series_step(Min, Max, Step, Out, Out2, K, NAcc).
+	K in (0 .. sup),
+	Out #= K * Step + Min.
 
+%wyznaczenie nieunikatowych A i B
+%lub
+%sprawdzenie czy A i B są nieunikatowe
 non_unique_AB(Min, Max, Step, A, B) :-
 	get_series_step(Min, Max, Step, A),
 	get_series_step(Min, Max, Step, B),
@@ -52,36 +28,86 @@ non_unique_AB(Min, Max, Step, A, B) :-
 	A2 #< B2,
 	B2 #\= B,
 	A2 #\= A,
-	A2*B2 #= Product,
-	!,
-	label([A, B]).
+	A2*B2 #= Product.
 
-%suma jest dozwolona gdy iloczyn skladnikow sumy mozna rozlozyc na wiecej niz 1 pare czynnikow
-eligible_sum(Min, Max, Sum) :-
+%sprawdzenie czy podana suma jest dozwolona
+%	suma jest dozwolona gdy iloczyn skladnikow sumy mozna rozlozyc na wiecej niz 1 pare czynnikow
+eligible_sum_check(Min, Max, Step, Sum) :-
 	A #= Sum - Min,
-	eligible_sum(Min, Max, A, Min).
-eligible_sum(_, _, A, B) :- A #< B.
-eligible_sum(Min, Max, A1, A2) :-
-	non_unique_AB(Min, Max, A2, A1),
-	NA1 #= A1 - 1,
-	NA2 #= A2 + 1,
-	eligible_sum(Min, Max, NA1, NA2).
-
+	eligible_sum_check(Min, Max, Step, A, Min).
+eligible_sum_check(_, _, _, A, B) :- A #< B.
+eligible_sum_check(Min, Max, Step, A1, A2) :-
+	non_unique_AB(Min, Max, Step, A2, A1),
+	NA1 #= A1 - Step,
+	NA2 #= A2 + Step,
+	eligible_sum_check(Min, Max, Step, NA1, NA2).
+	
+%zdefiniowanie wlasnego propagatora CLP, który reaguje na zmiany termu Sum
+eligible_sum(Min, Max, Step, Sum) :-
+	clpfd:make_propagator(eligible_sum(Min, Max, Step, Sum), Prop),
+	clpfd:init_propagator(Sum, Prop),
+	clpfd:trigger_once(Prop).
+	
+clpfd:run_propagator(eligible_sum(Min, Max, Step, Sum), _) :-
+	(
+		integer(Sum) -> eligible_sum_check(Min, Max, Step, Sum);
+		true
+	).
+	
+eligible_product_check_next(Min, Max, _, Product, A1, A2, NA1, NA2) :-
+	[NA1, NA2] ins (Min .. Max),
+	Product #= NA1 * NA2,
+	NA1 #> A1,
+	NA2 #< A2,
+	NA1 #< NA2,
+	label([NA1, NA2]).
+	
 %produkt jest dozwolony gdy suma pary czynnikow daje dozwolona sume tylko raz
-eligible_product(Min, Max, Product) :-
-	bagof([A, B], decompose_product(Min, Max, Product, A, B), ProductsList),
-	eligible_product(Min, Max, ProductsList, 0).
-eligible_product(_, _, [], 1).
-eligible_product(Min, Max, [[P1,P2]|T], Acc) :-
-	EligibleSum #= P1 + P2,
-	eligible_sum(Min, Max, EligibleSum),
+eligible_product_check(Min, Max, Step, Product) :-
+	[A1, A2] ins (Min .. Max),
+	Product #= A1 * A2,
+	label([A1, A2]),
+	!,
+	eligible_product_check(Min, Max, Step, Product, A1, A2, 0).
+eligible_product_check(_, _, _, _, _, _, Acc) :- Acc > 1, !, fail.
+eligible_product_check(Min, Max, Step, Product, A1, A2, Acc) :-
+	integer(A1),
+	integer(A2),
+	EligibleSum #= A1 + A2,
+	eligible_sum(Min, Max, Step, EligibleSum),
+	NAcc #= Acc + 1,
+	eligible_product_check_next(Min, Max, Step, Product, A1, A2, NA1, NA2),
+	!,
+	eligible_product_check(Min, Max, Step, Product, NA1, NA2, NAcc).
+eligible_product_check(Min, Max, Step, Product, A1, A2, Acc) :-
+	integer(A1),
+	integer(A2),
+	EligibleSum #= A1 + A2,
+	eligible_sum(Min, Max, Step, EligibleSum),
 	NAcc #= Acc + 1,
 	!,
-	eligible_product(Min, Max, T, NAcc).
-eligible_product(Min, Max, [_|T], Acc) :-
+	eligible_product_check(Min, Max, Step, Product, _, _, NAcc).
+eligible_product_check(Min, Max, Step, Product, A1, A2, Acc) :-
+integer(A1),
+	integer(A2),
+	eligible_product_check_next(Min, Max, Step, Product, A1, A2, NA1, NA2),
 	!,
-	eligible_product(Min, Max, T, Acc).
+	eligible_product_check(Min, Max, Step, Product, NA1, NA2, Acc).
+eligible_product_check(_, _, _, _, _, _, 1).
+	
+%zdefiniowanie wlasnego propagatora CLP, który reaguje na zmiany termu Product
+eligible_product(Min, Max, Step, Product) :-
+	clpfd:make_propagator(eligible_product(Min, Max, Step, Product), Prop),
+	clpfd:init_propagator(Product, Prop),
+	clpfd:trigger_once(Prop).
+	
+clpfd:run_propagator(eligible_product(Min, Max, Step, Product), _) :-
+	(
+		integer(Product) -> eligible_product_check(Min, Max, Step, Product);
+		true
+	).
 
+%zliczanie elementów będącymi rozwiązaniami z listy elementów
 count(List, Element, Occurences) :-
 	count(List, Element, Occurences, 0).
 count([], _, Occurences, Occurences).
@@ -89,25 +115,30 @@ count([[_, _, _, S]|T], [A, B, I, S], Occ, Acc) :-
 	NAcc #= Acc + 1,
 	!,
 	count(T, [A, B, I, S], Occ, NAcc).
-count([H|T], Element, Occ, Acc) :-
+count([_|T], Element, Occ, Acc) :-
 	!,
 	count(T, Element, Occ, Acc).
 
+%wyznaczenie unikatowego rozwiązania z listy
 find_unique_solution(List, Solution) :-
 	find_unique_solution(List, List, Solution).
 find_unique_solution(List, [[A, B, I, S]|_], [A, B, I, S]) :-
 	count(List, [_, _, _, S], 1).
-find_unique_solution(List, [H|T], Solution) :-
+find_unique_solution(List, [_|T], Solution) :-
 	find_unique_solution(List, T, Solution).
 
-sp_list(Min, Max, Krok, A, B, Iloczyn, Suma) :- 
-	non_unique_AB(Min, Max, Krok, A, B),
-	Iloczyn #= A*B,
-	Suma #= A+B,
-	eligible_sum(Min, Max, Suma),
-	eligible_product(Min, Max, Iloczyn),
-	label([A, B, Iloczyn, Suma]).
+sp_list(Min, Max, Step, A, B, Product, Sum) :- 
+	get_series_step(2, 99, Step, A),
+	get_series_step(2, 99, Step, B),
+	A #< B,
+	Sum #= A + B,
+	Product #= A * B,
+	eligible_sum(Min, Max, Step, Sum),
+	label([Sum]),
+	eligible_product(Min, Max, Step, Product),
+	label([Product]),
+	label([A, B]).
 
-sp(Min, Max, Krok, A, B, Iloczyn, Suma) :-
-	bagof([Atmp, Btmp, I, S], sp_list(Min, Max, Krok, Atmp, Btmp, I, S), List),
-	find_unique_solution(List, [A, B, Iloczyn, Suma]).
+sp(Min, Max, Step, A, B, Product, Sum) :-
+	bagof([A, B, I, S], sp_list(Min, Max, Step, A, B, I, S), List),
+	find_unique_solution(List, [A, B, Product, Sum]).
